@@ -1,0 +1,1210 @@
+diff --git a/docker/base-image/Dockerfile b/docker/base-image/Dockerfile
+index 3cf0b86..80371ae 100644
+--- a/docker/base-image/Dockerfile
++++ b/docker/base-image/Dockerfile
+@@ -47,7 +47,8 @@ RUN cd /tmp/ && \
+ 
+ # Install common python dependencies.
+ COPY ./requirements.txt /tmp
+-RUN pip install -r /tmp/requirements.txt
++RUN pip install --upgrade pip && \
++    pip install -r /tmp/requirements.txt
+ 
+ # Install dependencies required by google-cloud-cli.
+ RUN apt-get update && \
+diff --git a/experiment/run_experiment.py b/experiment/run_experiment.py
+index 6475eeb..8254048 100644
+--- a/experiment/run_experiment.py
++++ b/experiment/run_experiment.py
+@@ -282,8 +282,8 @@ def set_up_experiment_config_file(config):
+ 
+ def check_no_uncommitted_changes():
+     """Make sure that there are no uncommitted changes."""
+-    if subprocess.check_output(['git', 'diff'], cwd=utils.ROOT_DIR):
+-        raise ValidationError('Local uncommitted changes found, exiting.')
++#    if subprocess.check_output(['git', 'diff'], cwd=utils.ROOT_DIR):
++#        raise ValidationError('Local uncommitted changes found, exiting.')
+ 
+ 
+ def get_git_hash(allow_uncommitted_changes):
+diff --git a/fuzzers/angora/0001-Add-Custom-sanitizer.patch b/fuzzers/angora/0001-Add-Custom-sanitizer.patch
+new file mode 100644
+index 0000000..5ef40eb
+--- /dev/null
++++ b/fuzzers/angora/0001-Add-Custom-sanitizer.patch
+@@ -0,0 +1,59 @@
++From f2c57fe2d9dc452cd24bd9ebaa85a342d2540f00 Mon Sep 17 00:00:00 2001
++From: Elia Geretto <elia.f.geretto@gmail.com>
++Date: Wed, 7 Apr 2021 10:43:16 +0200
++Subject: [PATCH] [CMake] Add Custom sanitizer to build system
++
++This patch changes the build system to allow passing custom sanitizer
++flags when building LLVM. It is needed to allow building libcxx and
++libcxxabi with the Angora Track instrumentation.
++
++This patch is correct but is unlikely to be accepted upstream.
++
++---
++ libcxx/CMakeLists.txt                      | 2 ++
++ llvm/CMakeLists.txt                        | 2 ++
++ llvm/cmake/modules/HandleLLVMOptions.cmake | 2 ++
++ 3 files changed, 6 insertions(+)
++
++diff --git a/libcxx/CMakeLists.txt b/libcxx/CMakeLists.txt
++index 910d04b54b6d..183cc6b2069b 100644
++--- a/libcxx/CMakeLists.txt
+++++ b/libcxx/CMakeLists.txt
++@@ -708,6 +708,8 @@ function(get_sanitizer_flags OUT_VAR  USE_SANITIZER)
++       append_flags(SANITIZER_FLAGS -fsanitize=thread)
++     elseif (USE_SANITIZER STREQUAL "DataFlow")
++       append_flags(SANITIZER_FLAGS -fsanitize=dataflow)
+++    elseif (USE_SANITIZER STREQUAL "Custom")
+++      append_flags(SANITIZER_FLAGS "${LLVM_CUSTOM_SANITIZER_FLAGS}")
++     else()
++       message(WARNING "Unsupported value of LLVM_USE_SANITIZER: ${USE_SANITIZER}")
++     endif()
++diff --git a/llvm/CMakeLists.txt b/llvm/CMakeLists.txt
++index 247ad36d3845..e438bfdec3de 100644
++--- a/llvm/CMakeLists.txt
+++++ b/llvm/CMakeLists.txt
++@@ -490,6 +490,8 @@ endif( LLVM_USE_PERF )
++ 
++ set(LLVM_USE_SANITIZER "" CACHE STRING
++   "Define the sanitizer used to build binaries and tests.")
+++set(LLVM_CUSTOM_SANITIZER_FLAGS "" CACHE STRING
+++  "Compiler flags used when LLVM_USE_SANITIZER is set to Custom")
++ option(LLVM_OPTIMIZE_SANITIZED_BUILDS "Pass -O1 on debug sanitizer builds" ON)
++ set(LLVM_LIB_FUZZING_ENGINE "" CACHE PATH
++   "Path to fuzzing library for linking with fuzz targets")
++diff --git a/llvm/cmake/modules/HandleLLVMOptions.cmake b/llvm/cmake/modules/HandleLLVMOptions.cmake
++index 5ef22eb493ba..81211addc4b5 100644
++--- a/llvm/cmake/modules/HandleLLVMOptions.cmake
+++++ b/llvm/cmake/modules/HandleLLVMOptions.cmake
++@@ -755,6 +755,8 @@ if(LLVM_USE_SANITIZER)
++     elseif (LLVM_USE_SANITIZER STREQUAL "Leaks")
++       append_common_sanitizer_flags()
++       append("-fsanitize=leak" CMAKE_C_FLAGS CMAKE_CXX_FLAGS)
+++    elseif (LLVM_USE_SANITIZER STREQUAL "Custom")
+++      append("${LLVM_CUSTOM_SANITIZER_FLAGS}" CMAKE_C_FLAGS CMAKE_CXX_FLAGS)
++     else()
++       message(FATAL_ERROR "Unsupported value of LLVM_USE_SANITIZER: ${LLVM_USE_SANITIZER}")
++     endif()
++-- 
++2.30.2
++
+diff --git a/fuzzers/angora/0001-DFSan-Fix-call-to-__dfsan_mem_transfer_callback.patch b/fuzzers/angora/0001-DFSan-Fix-call-to-__dfsan_mem_transfer_callback.patch
+new file mode 100644
+index 0000000..9bb7c58
+--- /dev/null
++++ b/fuzzers/angora/0001-DFSan-Fix-call-to-__dfsan_mem_transfer_callback.patch
+@@ -0,0 +1,28 @@
++commit 2627f99613740b8f8a85e150dc0e4c4b6fa6e13f
++Author: Elia Geretto <EliaGeretto>
++Date:   Thu Apr 22 21:05:13 2021 +0000
++
++    [dfsan] Fix Len argument type in call to __dfsan_mem_transfer_callback
++    
++    This patch is supposed to solve: https://bugs.llvm.org/show_bug.cgi?id=50075
++    
++    The function `__dfsan_mem_transfer_callback` takes a `Len` argument of type `i64`; however, when processing a `MemTransferInst` such as `llvm.memcpy.p0i8.p0i8.i32`, the `len` argument has type `i32`. In order to make the type of `len` compatible with the one of the callback argument, this change zero-extends it when necessary.
++    
++    Reviewed By: stephan.yichao.zhao, gbalats
++    
++    Differential Revision: https://reviews.llvm.org/D101048
++
++diff --git a/llvm/lib/Transforms/Instrumentation/DataFlowSanitizer.cpp b/llvm/lib/Transforms/Instrumentation/DataFlowSanitizer.cpp
++index 19dd41904779..015639dcceb6 100644
++--- a/llvm/lib/Transforms/Instrumentation/DataFlowSanitizer.cpp
+++++ b/llvm/lib/Transforms/Instrumentation/DataFlowSanitizer.cpp
++@@ -2915,7 +2915,8 @@ void DFSanVisitor::visitMemTransferInst(MemTransferInst &I) {
++   }
++   if (ClEventCallbacks) {
++     IRB.CreateCall(DFSF.DFS.DFSanMemTransferCallbackFn,
++-                   {RawDestShadow, I.getLength()});
+++                   {RawDestShadow,
+++                    IRB.CreateZExtOrTrunc(I.getLength(), DFSF.DFS.IntptrTy)});
++   }
++ }
++ 
+diff --git a/fuzzers/angora/0001-Disable-UnfoldBranchPass.patch b/fuzzers/angora/0001-Disable-UnfoldBranchPass.patch
+new file mode 100644
+index 0000000..f7bbcdb
+--- /dev/null
++++ b/fuzzers/angora/0001-Disable-UnfoldBranchPass.patch
+@@ -0,0 +1,35 @@
++From b1b4baab3b173d098ca54c49e430602e80425c73 Mon Sep 17 00:00:00 2001
++From: Elia Geretto <elia.f.geretto@gmail.com>
++Date: Mon, 10 May 2021 12:29:35 +0200
++Subject: [PATCH] Disable UnfoldBranchPass
++
++---
++ llvm_mode/compiler/angora_clang.c | 12 ++++++------
++ 1 file changed, 6 insertions(+), 6 deletions(-)
++
++diff --git a/llvm_mode/compiler/angora_clang.c b/llvm_mode/compiler/angora_clang.c
++index 28f69ea..4f484c6 100644
++--- a/llvm_mode/compiler/angora_clang.c
+++++ b/llvm_mode/compiler/angora_clang.c
++@@ -98,12 +98,12 @@ static u8 check_if_assembler(u32 argc, char **argv) {
++ }
++ 
++ static void add_angora_pass(size_t* cc_par_cnt, char* cc_params[*cc_par_cnt], struct config* config) {
++-  if (config->clang_type != CLANG_DFSAN_TYPE) {
++-    cc_params[(*cc_par_cnt)++] = "-Xclang";
++-    cc_params[(*cc_par_cnt)++] = "-load";
++-    cc_params[(*cc_par_cnt)++] = "-Xclang";
++-    cc_params[(*cc_par_cnt)++] = UNFOLD_BRANCH_PASS_PATH;
++-  }
+++  // if (config->clang_type != CLANG_DFSAN_TYPE) {
+++  //   cc_params[(*cc_par_cnt)++] = "-Xclang";
+++  //   cc_params[(*cc_par_cnt)++] = "-load";
+++  //   cc_params[(*cc_par_cnt)++] = "-Xclang";
+++  //   cc_params[(*cc_par_cnt)++] = UNFOLD_BRANCH_PASS_PATH;
+++  // }
++ 
++   cc_params[(*cc_par_cnt)++] = "-Xclang";
++   cc_params[(*cc_par_cnt)++] = "-load";
++-- 
++2.31.1
++
+diff --git a/fuzzers/angora/0001-Ignore-STACKMAP-instruction-in-x87-stackifier.patch b/fuzzers/angora/0001-Ignore-STACKMAP-instruction-in-x87-stackifier.patch
+new file mode 100644
+index 0000000..12bd51b
+--- /dev/null
++++ b/fuzzers/angora/0001-Ignore-STACKMAP-instruction-in-x87-stackifier.patch
+@@ -0,0 +1,27 @@
++From 25f4b1424fe6a889e84be22da719507a826ea89d Mon Sep 17 00:00:00 2001
++From: Elia Geretto <elia.f.geretto@gmail.com>
++Date: Tue, 6 Apr 2021 13:02:00 +0200
++Subject: [PATCH] Ignore STACKMAP instruction in x87 stackifier
++
++This is a temporary workaround and may cause miscompilations.
++
++---
++ llvm/lib/Target/X86/X86FloatingPoint.cpp | 2 +-
++ 1 file changed, 1 insertion(+), 1 deletion(-)
++
++diff --git a/llvm/lib/Target/X86/X86FloatingPoint.cpp b/llvm/lib/Target/X86/X86FloatingPoint.cpp
++index b0f2f23f8548..b659d2e5a584 100644
++--- a/llvm/lib/Target/X86/X86FloatingPoint.cpp
+++++ b/llvm/lib/Target/X86/X86FloatingPoint.cpp
++@@ -430,7 +430,7 @@ bool FPS::processBasicBlock(MachineFunction &MF, MachineBasicBlock &BB) {
++         X86::RFP80RegClass.contains(MI.getOperand(0).getReg()))
++       FPInstClass = X86II::SpecialFP;
++ 
++-    if (MI.isCall())
+++    if (MI.isCall() && MI.getOpcode() != X86::STACKMAP)
++       FPInstClass = X86II::SpecialFP;
++ 
++     if (FPInstClass == X86II::NotFP)
++-- 
++2.26.2
++
+diff --git a/fuzzers/angora/0001-XRay-compiler-rt-x86_64-Fix-CFI-directives-in-assemb.patch b/fuzzers/angora/0001-XRay-compiler-rt-x86_64-Fix-CFI-directives-in-assemb.patch
+new file mode 100644
+index 0000000..e8de44d
+--- /dev/null
++++ b/fuzzers/angora/0001-XRay-compiler-rt-x86_64-Fix-CFI-directives-in-assemb.patch
+@@ -0,0 +1,230 @@
++From b46c89892fe25bec197fd30f09b3a312da126422 Mon Sep 17 00:00:00 2001
++From: Elia Geretto <elia.f.geretto@gmail.com>
++Date: Sat, 6 Mar 2021 10:38:27 -0800
++Subject: [PATCH] [XRay][compiler-rt][x86_64] Fix CFI directives in assembly
++ trampolines
++
++This patch modifies the x86_64 XRay trampolines to fix the CFI information
++generated by the assembler. One of the main issues in correcting the CFI
++directives is the `ALIGNED_CALL_RAX` macro, which makes the CFA dependent on
++the alignment of the stack. However, this macro is not really necessary because
++some additional assumptions can be made on the alignment of the stack when the
++trampolines are called. The code has been written as if the stack is guaranteed
++to be 8-bytes aligned; however, it is instead guaranteed to be misaligned by 8
++bytes with respect to a 16-bytes alignment. For this reason, always moving the
++stack pointer by 8 bytes is sufficient to restore the appropriate alignment.
++
++Trampolines that are called from within a function as a result of the builtins
++`__xray_typedevent` and `__xray_customevent` are necessarely called with the
++stack properly aligned so, in this case too, `ALIGNED_CALL_RAX` can be
++eliminated.
++
++Fixes https://bugs.llvm.org/show_bug.cgi?id=49060
++
++Reviewed By: MaskRay
++
++Differential Revision: https://reviews.llvm.org/D96785
++---
++ compiler-rt/lib/xray/xray_trampoline_x86_64.S | 77 ++++++++++++-------
++ 1 file changed, 50 insertions(+), 27 deletions(-)
++
++diff --git a/compiler-rt/lib/xray/xray_trampoline_x86_64.S b/compiler-rt/lib/xray/xray_trampoline_x86_64.S
++index 12c5a6ccd9a4..02cf69f766c4 100644
++--- a/compiler-rt/lib/xray/xray_trampoline_x86_64.S
+++++ b/compiler-rt/lib/xray/xray_trampoline_x86_64.S
++@@ -15,12 +15,37 @@
++ #include "../builtins/assembly.h"
++ #include "../sanitizer_common/sanitizer_asm.h"
++ 
+++// XRay trampolines which are not produced by intrinsics are not System V AMD64
+++// ABI compliant because they are called with a stack that is always misaligned
+++// by 8 bytes with respect to a 16 bytes alignment. This is because they are
+++// called immediately after the call to, or immediately before returning from,
+++// the function being instrumented. This saves space in the patch point, but
+++// misaligns the stack by 8 bytes.
+++
+++.macro ALIGN_STACK_16B
+++#if defined(__APPLE__)
+++	subq	$$8, %rsp
+++#else
+++	subq	$8, %rsp
+++#endif
+++	CFI_ADJUST_CFA_OFFSET(8)
+++.endm
++ 
+++.macro RESTORE_STACK_ALIGNMENT
+++#if defined(__APPLE__)
+++	addq	$$8, %rsp
+++#else
+++	addq	$8, %rsp
+++#endif
+++	CFI_ADJUST_CFA_OFFSET(-8)
+++.endm
++ 
+++// This macro should keep the stack aligned to 16 bytes.
++ .macro SAVE_REGISTERS
++ 	pushfq
+++	CFI_ADJUST_CFA_OFFSET(8)
++ 	subq $240, %rsp
++-	CFI_DEF_CFA_OFFSET(248)
+++	CFI_ADJUST_CFA_OFFSET(240)
++ 	movq %rbp, 232(%rsp)
++ 	movupd	%xmm0, 216(%rsp)
++ 	movupd	%xmm1, 200(%rsp)
++@@ -45,6 +70,7 @@
++ 	movq  %r15, 0(%rsp)
++ .endm
++ 
+++// This macro should keep the stack aligned to 16 bytes.
++ .macro RESTORE_REGISTERS
++ 	movq  232(%rsp), %rbp
++ 	movupd	216(%rsp), %xmm0
++@@ -69,22 +95,9 @@
++ 	movq  8(%rsp), %r14
++ 	movq  0(%rsp), %r15
++ 	addq	$240, %rsp
+++	CFI_ADJUST_CFA_OFFSET(-240)
++ 	popfq
++-	CFI_DEF_CFA_OFFSET(8)
++-.endm
++-
++-.macro ALIGNED_CALL_RAX
++-	// Call the logging handler, after aligning the stack to a 16-byte boundary.
++-	// The approach we're taking here uses additional stack space to stash the
++-	// stack pointer twice before aligning the pointer to 16-bytes. If the stack
++-	// was 8-byte aligned, it will become 16-byte aligned -- when restoring the
++-	// pointer, we can always look -8 bytes from the current position to get
++-	// either of the values we've stashed in the first place.
++-	pushq %rsp
++-	pushq (%rsp)
++-	andq $-0x10, %rsp
++-  callq *%rax
++-	movq 8(%rsp), %rsp
+++	CFI_ADJUST_CFA_OFFSET(-8)
++ .endm
++ 
++ 	.text
++@@ -104,6 +117,7 @@
++ # LLVM-MCA-BEGIN __xray_FunctionEntry
++ ASM_SYMBOL(__xray_FunctionEntry):
++ 	CFI_STARTPROC
+++	ALIGN_STACK_16B
++ 	SAVE_REGISTERS
++ 
++ 	// This load has to be atomic, it's concurrent with __xray_patch().
++@@ -115,10 +129,11 @@ ASM_SYMBOL(__xray_FunctionEntry):
++ 	// The patched function prologue puts its xray_instr_map index into %r10d.
++ 	movl	%r10d, %edi
++ 	xor	%esi,%esi
++-	ALIGNED_CALL_RAX
+++	callq	*%rax
++ 
++ .Ltmp0:
++ 	RESTORE_REGISTERS
+++	RESTORE_STACK_ALIGNMENT
++ 	retq
++ # LLVM-MCA-END
++ 	ASM_SIZE(__xray_FunctionEntry)
++@@ -133,11 +148,13 @@ ASM_SYMBOL(__xray_FunctionEntry):
++ # LLVM-MCA-BEGIN __xray_FunctionExit
++ ASM_SYMBOL(__xray_FunctionExit):
++ 	CFI_STARTPROC
+++	ALIGN_STACK_16B
+++
++ 	// Save the important registers first. Since we're assuming that this
++ 	// function is only jumped into, we only preserve the registers for
++ 	// returning.
++-	subq	$56, %rsp
++-	CFI_DEF_CFA_OFFSET(64)
+++	subq	$64, %rsp
+++	CFI_ADJUST_CFA_OFFSET(64)
++ 	movq  %rbp, 48(%rsp)
++ 	movupd	%xmm0, 32(%rsp)
++ 	movupd	%xmm1, 16(%rsp)
++@@ -149,7 +166,7 @@ ASM_SYMBOL(__xray_FunctionExit):
++ 
++ 	movl	%r10d, %edi
++ 	movl	$1, %esi
++-  ALIGNED_CALL_RAX
+++	callq	*%rax
++ 
++ .Ltmp2:
++ 	// Restore the important registers.
++@@ -158,8 +175,10 @@ ASM_SYMBOL(__xray_FunctionExit):
++ 	movupd	16(%rsp), %xmm1
++ 	movq	8(%rsp), %rax
++ 	movq	0(%rsp), %rdx
++-	addq	$56, %rsp
++-	CFI_DEF_CFA_OFFSET(8)
+++	addq	$64, %rsp
+++	CFI_ADJUST_CFA_OFFSET(-64)
+++
+++	RESTORE_STACK_ALIGNMENT
++ 	retq
++ # LLVM-MCA-END
++ 	ASM_SIZE(__xray_FunctionExit)
++@@ -174,6 +193,7 @@ ASM_SYMBOL(__xray_FunctionExit):
++ # LLVM-MCA-BEGIN __xray_FunctionTailExit
++ ASM_SYMBOL(__xray_FunctionTailExit):
++ 	CFI_STARTPROC
+++	ALIGN_STACK_16B
++ 	SAVE_REGISTERS
++ 
++ 	movq	ASM_SYMBOL(_ZN6__xray19XRayPatchedFunctionE)(%rip), %rax
++@@ -182,11 +202,11 @@ ASM_SYMBOL(__xray_FunctionTailExit):
++ 
++ 	movl	%r10d, %edi
++ 	movl	$2, %esi
++-
++-  ALIGNED_CALL_RAX
+++	callq	*%rax
++ 
++ .Ltmp4:
++ 	RESTORE_REGISTERS
+++	RESTORE_STACK_ALIGNMENT
++ 	retq
++ # LLVM-MCA-END
++ 	ASM_SIZE(__xray_FunctionTailExit)
++@@ -201,6 +221,7 @@ ASM_SYMBOL(__xray_FunctionTailExit):
++ # LLVM-MCA-BEGIN __xray_ArgLoggerEntry
++ ASM_SYMBOL(__xray_ArgLoggerEntry):
++ 	CFI_STARTPROC
+++	ALIGN_STACK_16B
++ 	SAVE_REGISTERS
++ 
++ 	// Again, these function pointer loads must be atomic; MOV is fine.
++@@ -223,10 +244,12 @@ ASM_SYMBOL(__xray_ArgLoggerEntry):
++ 
++ 	// 32-bit function ID becomes the first
++ 	movl	%r10d, %edi
++-	ALIGNED_CALL_RAX
+++
+++	callq	*%rax
++ 
++ .Larg1entryFail:
++ 	RESTORE_REGISTERS
+++	RESTORE_STACK_ALIGNMENT
++ 	retq
++ # LLVM-MCA-END
++ 	ASM_SIZE(__xray_ArgLoggerEntry)
++@@ -249,7 +272,7 @@ ASM_SYMBOL(__xray_CustomEvent):
++ 	testq %rax,%rax
++ 	je .LcustomEventCleanup
++ 
++-	ALIGNED_CALL_RAX
+++	callq	*%rax
++ 
++ .LcustomEventCleanup:
++ 	RESTORE_REGISTERS
++@@ -275,7 +298,7 @@ ASM_SYMBOL(__xray_TypedEvent):
++ 	testq %rax,%rax
++ 	je .LtypedEventCleanup
++ 
++-	ALIGNED_CALL_RAX
+++	callq	*%rax
++ 
++ .LtypedEventCleanup:
++ 	RESTORE_REGISTERS
++-- 
++2.26.2
++
+diff --git a/fuzzers/angora/builder.Dockerfile b/fuzzers/angora/builder.Dockerfile
+new file mode 100644
+index 0000000..664b588
+--- /dev/null
++++ b/fuzzers/angora/builder.Dockerfile
+@@ -0,0 +1,56 @@
++# fuzzers/angora/builder.Dockerfile
++# ─────────────────────────────────────────────────────────────
++# 경량 버전: prebuild.sh로 생성된 cached/ 산출물을 사용
++# LLVM 소스빌드 없이 벤치마크 빌드가 수 분 안에 완료됨
++#
++# 사전 조건:
++#   1. prebuild.sh 실행 완료 (cached/ 디렉토리 존재)
++#   2. base-image 빌드 완료 (make -j base-image)
++#
++# 원본 (풀 빌드): builder.Dockerfile.full 참고
++# ─────────────────────────────────────────────────────────────
++
++ARG parent_image
++
++FROM $parent_image AS benchmark-with-fuzzer
++
++RUN apt-get update && \
++    apt-get install -y \
++        pkg-config
++
++# ─── LLVM 11 (패치 적용 버전) ───
++COPY cached/LLVM-11.1.0-Linux.sh /tmp/
++RUN /tmp/LLVM-11.1.0-Linux.sh --skip-license --prefix=/usr/local && \
++    mkdir -p $OUT/fuzzer_prefix/bin && \
++    cp /usr/local/bin/llvm-xray $OUT/fuzzer_prefix/bin && \
++    rm /tmp/LLVM-11.1.0-Linux.sh
++
++# ─── libunwind ───
++COPY cached/libunwind.tar.gz /tmp/
++RUN cd / && \
++    tar xf /tmp/libunwind.tar.gz && \
++    ldconfig && \
++    mkdir -p $OUT/fuzzer_prefix/lib && \
++    cp /usr/local/lib/libunwind* $OUT/fuzzer_prefix/lib && \
++    rm /tmp/libunwind.tar.gz
++
++# ─── Angora fuzzer binary ───
++COPY cached/Angora-1.2.2-Linux.sh /tmp/
++RUN /tmp/Angora-1.2.2-Linux.sh --skip-license --prefix=/usr/local && \
++    mkdir -p $OUT/fuzzer_prefix/bin && \
++    cp /usr/local/bin/fuzzer $OUT/fuzzer_prefix/bin && \
++    rm /tmp/Angora-1.2.2-Linux.sh
++
++# ─── DFSan ABI lists ───
++COPY cached/extra_abilists /extra_abilists
++
++# ─── Standalone fuzz target libraries ───
++COPY cached/libStandaloneFuzzTargetAngoraFast.a  /llvm-project/
++COPY cached/libStandaloneFuzzTargetAngoraTrack.a /llvm-project/
++
++# ─── libcxx (plain = fast mode, track = taint tracking mode) ───
++COPY cached/plain-prefix/ /llvm-project/plain-prefix/
++ENV ANGORA_LIBCXX_FAST_PREFIX=/llvm-project/plain-prefix/
++
++COPY cached/track-prefix/ /llvm-project/track-prefix/
++ENV ANGORA_LIBCXX_TRACK_PREFIX=/llvm-project/track-prefix/
+diff --git a/fuzzers/angora/builder.Dockerfile.full b/fuzzers/angora/builder.Dockerfile.full
+new file mode 100644
+index 0000000..705c34f
+--- /dev/null
++++ b/fuzzers/angora/builder.Dockerfile.full
+@@ -0,0 +1,237 @@
++# fuzzers/angora/builder.Dockerfile.full
++# ─────────────────────────────────────────────────────────────
++# 이 파일은 prebuild.sh에서 1회만 사용됨. 
++# 실험 시에는 builder.Dockerfile (경량 버전)이 사용됨.
++# ─────────────────────────────────────────────────────────────
++
++# NOTE: base-image에서 Python을 복사하지 않으므로 참조 불필요
++# (시스템 python3 사용으로 glibc 불일치 문제 해결)
++
++FROM ubuntu:xenial AS libunwind-builder
++
++RUN apt-get update && \
++    apt-get install -y \
++        git \
++        build-essential \
++        autoconf \
++        libtool
++
++RUN git clone https://github.com/libunwind/libunwind.git /libunwind && \
++    cd /libunwind && \
++    git checkout v1.6.2 && \
++    autoreconf --install && \
++    ./configure --enable-static --enable-shared --enable-setjmp=no && \
++    make -j && \
++    make install DESTDIR=/tmp/libunwind_prefix && \
++    mkdir /libunwind_build && \
++    cd /libunwind_build && \
++    tar --directory=/tmp/libunwind_prefix -cf libunwind.tar.gz usr && \
++    rm -rf /libunwind /tmp/libunwind_prefix
++
++FROM ubuntu:xenial AS llvm-builder-deps
++
++ARG DEBIAN_FRONTEND=noninteractive
++
++RUN apt-get update && \
++    apt-get install -y git python3
++
++RUN mkdir -p /llvm-project && \
++    cd /llvm-project && \
++    git clone --depth 1 https://github.com/llvm/llvm-project.git \
++        --branch release/11.x \
++        source
++
++RUN apt-get install -y \
++        software-properties-common \
++        apt-transport-https \
++        wget
++
++# CMake binary install
++RUN wget https://github.com/Kitware/CMake/releases/download/v3.22.1/cmake-3.22.1-linux-x86_64.tar.gz && \
++    tar -zxvf cmake-3.22.1-linux-x86_64.tar.gz && \
++    cp -r cmake-3.22.1-linux-x86_64/bin /usr/local/ && \
++    cp -r cmake-3.22.1-linux-x86_64/share /usr/local/ && \
++    rm -rf cmake-3.22.1-linux-x86_64.tar.gz cmake-3.22.1-linux-x86_64
++
++# NOTE: Python venv 제거됨 — system python3으로 cmake 빌드 충분
++# (기존: base-image에서 Python 3.10 복사 + venv → glibc 불일치 문제)
++
++RUN apt-get install -y \
++        build-essential \
++        ninja-build
++
++COPY 0001-Add-Custom-sanitizer.patch \
++    /llvm-project/
++COPY 0001-Ignore-STACKMAP-instruction-in-x87-stackifier.patch \
++    /llvm-project/
++COPY 0001-XRay-compiler-rt-x86_64-Fix-CFI-directives-in-assemb.patch \
++    /llvm-project/
++COPY 0001-DFSan-Fix-call-to-__dfsan_mem_transfer_callback.patch \
++    /llvm-project/
++RUN cd /llvm-project/source && \
++    git apply ../*.patch
++
++FROM llvm-builder-deps AS llvm-builder
++
++RUN cd /llvm-project && \
++    cmake -Ssource/llvm -Bbuild-assert \
++        -GNinja \
++        -DCMAKE_BUILD_TYPE=Release \
++        -DLLVM_ENABLE_PROJECTS='clang;compiler-rt;lld' \
++        -DLLVM_TARGETS_TO_BUILD='X86' \
++        -DLLVM_PARALLEL_LINK_JOBS=2 \
++        -DLLVM_ENABLE_ASSERTIONS=ON && \
++    # CPU, RAM 사용량에 따라 조절해서 사용할것 -> -j 64
++    cmake --build build-assert -- -j 64 && \
++    cd build-assert && \
++    cpack -G "STGZ" && \
++    cd /llvm-project && \
++    mv build-assert/LLVM-11.1.0-Linux.sh . && \
++    rm -rf build-assert
++
++FROM llvm-builder-deps AS fuzzer-builder
++
++ARG DEBIAN_FRONTEND=noninteractive
++
++RUN apt-get update && \
++    apt-get install -y \
++        libc++-dev \
++        libc++abi-dev \
++        curl \
++        lsb-release \
++        ca-certificates \
++        gnupg \
++        apt-utils \
++        zlib1g-dev \
++        libgcrypt-dev \
++        libmount-dev \
++        pkg-config \
++    && \
++    mkdir -p ~/.ssh && \
++    ssh-keyscan github.com >> ~/.ssh/known_hosts && \
++    ssh-keyscan bitbucket.org >> ~/.ssh/known_hosts
++
++# Rust nightly
++RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs \
++        > /tmp/rustup-init.sh && \
++    sh /tmp/rustup-init.sh -y --default-toolchain nightly && \
++    rm /tmp/rustup-init.sh
++ENV PATH="/root/.cargo/bin:${PATH}"
++
++# Corrosion
++RUN mkdir -p /corrosion && \
++    cd /corrosion && \
++    git clone https://github.com/AndrewGaspar/corrosion.git source && \
++    . /root/.cargo/env && \
++    cmake -Ssource -Bbuild \
++        -DCMAKE_BUILD_TYPE=Release \
++        -DCORROSION_BUILD_TESTS=OFF && \
++    cmake --build build -- -j && \
++    cd build && \
++    make install && \
++    rm -rf /corrosion
++
++# DFSan ABI lists
++RUN mkdir /extra_abilists && \
++    nm --dynamic /usr/lib/x86_64-linux-gnu/libz.so \
++        | awk '{ if ($2 == "T") print "fun:" $3 "=uninstrumented" }' \
++        > /extra_abilists/libz_abilist.txt && \
++    nm --dynamic /usr/lib/x86_64-linux-gnu/libgcrypt.so \
++        | awk '{ if ($2 == "T") print "fun:" $3 "=uninstrumented" }' \
++        > /extra_abilists/libgcrypt_abilist.txt && \
++    nm --dynamic /usr/lib/x86_64-linux-gnu/libmount.so \
++        | awk '{ if ($2 == "T") print "fun:" $3 "=uninstrumented" }' \
++        > /extra_abilists/libmount_abilist.txt && \
++    echo "fun:inflateInit2_=uninstrumented" >> /extra_abilists/libz_abilist.txt && \
++    echo "fun:inflateEnd=uninstrumented" >> /extra_abilists/libz_abilist.txt && \
++    echo "fun:inflateReset=uninstrumented" >> /extra_abilists/libz_abilist.txt && \
++    echo "fun:inflate=uninstrumented" >> /extra_abilists/libz_abilist.txt && \
++    echo "fun:crc32=uninstrumented" >> /extra_abilists/libz_abilist.txt
++
++COPY --from=libunwind-builder /libunwind_build/libunwind.tar.gz /tmp/
++RUN cd / && \
++    tar xf /tmp/libunwind.tar.gz && \
++    ldconfig
++
++COPY --from=llvm-builder /llvm-project/LLVM-11.1.0-Linux.sh /llvm-project
++RUN /llvm-project/LLVM-11.1.0-Linux.sh --skip-license --prefix=/usr/local
++
++# Build Angora fuzzer
++RUN mkdir -p /angora && \
++    cd /angora && \
++    git clone \
++        --branch angora-snappy \
++        --recursive \
++        # 여기서 받아오는데 이걸 Reusing으로 바꿨을 때 어떻게 되는지 체크 필요할 듯 함.
++        https://github.com/vusec/snappy \
++        source && \
++    CARGO_NET_GIT_FETCH_WITH_CLI=true \
++    cmake -Ssource -Bbuild \
++        -DCMAKE_BUILD_TYPE=Release \
++        -DCMAKE_C_COMPILER=clang \
++        -DCMAKE_CXX_COMPILER=clang++ && \
++    cmake --build build -- -j 64 && \
++    cd build && \
++    make install && \
++    cpack -G "STGZ" && \
++    cd /angora && \
++    mv build/Angora-1.2.2-Linux.sh . && \
++    rm -rf build
++
++COPY 0001-Disable-UnfoldBranchPass.patch \
++    /angora/
++RUN cd /angora/source && \
++    git apply ../*.patch
++
++# Build plain libcxx
++RUN cd /llvm-project && \
++    cmake -Ssource/llvm -Bbuild-plain \
++        -GNinja \
++        -DCMAKE_INSTALL_PREFIX=/llvm-project/plain-prefix \
++        -DCMAKE_BUILD_TYPE=Release \
++        -DCMAKE_C_COMPILER=clang \
++        -DCMAKE_CXX_COMPILER=clang++ \
++        -DLLVM_ENABLE_PROJECTS='libcxx;libcxxabi' \
++        -DLIBCXX_ENABLE_SHARED=OFF \
++        -DLIBCXXABI_ENABLE_SHARED=OFF && \
++    cmake --build build-plain -- cxx cxxabi && \
++    cd build-plain && \
++    ninja install-cxx install-cxxabi && \
++    cd .. && \
++    rm -rf build-plain
++
++RUN cd /llvm-project && \
++    angora-clang -c \
++        source/compiler-rt/lib/fuzzer/standalone/StandaloneFuzzTargetMain.c \
++        -o StandaloneFuzzTargetMainAngoraFast.o && \
++    ar rc libStandaloneFuzzTargetAngoraFast.a \
++        StandaloneFuzzTargetMainAngoraFast.o && \
++    rm StandaloneFuzzTargetMainAngoraFast.o
++
++# Build Angora track libcxx
++RUN cd /llvm-project && \
++    INSTR_FLAGS="$(FLAGS_MODE=1 USE_DFSAN=1 angora-clang++ --compiler)"; \
++    cmake -Ssource/llvm -Bbuild-track \
++        -GNinja \
++        -DCMAKE_INSTALL_PREFIX=/llvm-project/track-prefix \
++        -DCMAKE_BUILD_TYPE=Release \
++        -DCMAKE_C_COMPILER=clang \
++        -DCMAKE_CXX_COMPILER=clang++ \
++        -DLLVM_ENABLE_PROJECTS='libcxx;libcxxabi' \
++        -DLLVM_USE_SANITIZER='Custom' \
++        -DLLVM_CUSTOM_SANITIZER_FLAGS="$INSTR_FLAGS" \
++        -DLIBCXX_ENABLE_SHARED=OFF \
++        -DLIBCXXABI_ENABLE_SHARED=OFF && \
++    cmake --build build-track -- cxx cxxabi && \
++    cd build-track && \
++    ninja install-cxx install-cxxabi && \
++    cd .. && \
++    rm -rf build-track
++
++RUN cd /llvm-project && \
++    USE_TRACK=1 angora-clang -c \
++        source/compiler-rt/lib/fuzzer/standalone/StandaloneFuzzTargetMain.c \
++        -o StandaloneFuzzTargetMainAngoraTrack.o && \
++    ar rc libStandaloneFuzzTargetAngoraTrack.a \
++        StandaloneFuzzTargetMainAngoraTrack.o && \
++    rm StandaloneFuzzTargetMainAngoraTrack.o
+diff --git a/fuzzers/angora/fuzzer.py b/fuzzers/angora/fuzzer.py
+new file mode 100755
+index 0000000..6f9897f
+--- /dev/null
++++ b/fuzzers/angora/fuzzer.py
+@@ -0,0 +1,178 @@
++# Copyright 2020 Google LLC
++#
++# Licensed under the Apache License, Version 2.0 (the "License");
++# you may not use this file except in compliance with the License.
++# You may obtain a copy of the License at
++#
++# http://www.apache.org/licenses/LICENSE-2.0
++#
++# Unless required by applicable law or agreed to in writing, software
++# distributed under the License is distributed on an "AS IS" BASIS,
++# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++# See the License for the specific language governing permissions and
++# limitations under the License.
++
++import os
++from pathlib import Path
++import copy
++import subprocess
++import json
++
++from fuzzers import utils
++
++EXTRA_ABILISTS_PATH = Path("/extra_abilists")
++LLVM_PROJECT_PATH = Path("/llvm-project")
++
++BENCHMARK_TO_ABILISTS = {
++    "libpng-1.2.56": [EXTRA_ABILISTS_PATH / "libz_abilist.txt"],
++    "libhtp_fuzz_htp": [EXTRA_ABILISTS_PATH / "libz_abilist.txt"],
++    "libxslt_xpath": [EXTRA_ABILISTS_PATH / "libgcrypt_abilist.txt"],
++    "systemd_fuzz-link-parser": [EXTRA_ABILISTS_PATH / "libmount_abilist.txt"],
++    "systemd_fuzz-varlink": [EXTRA_ABILISTS_PATH / "libmount_abilist.txt"],
++}
++
++
++def get_blacklist_args(benchmark_name):
++    flags = []
++    for abilist_path in BENCHMARK_TO_ABILISTS.get(benchmark_name, []):
++        flags.append(f"-fsanitize-blacklist={abilist_path}")
++    return flags
++
++
++def build_angora_fast():
++    build_env = copy.deepcopy(os.environ)
++
++    build_env["CC"] = "angora-clang"
++    build_env["CXX"] = "angora-clang++"
++    build_env["USE_FAST"] = "true"
++    build_env["ANGORA_DISABLE_SANITIZERS"] = "true"
++    build_env["FUZZER_LIB"] = str(
++        LLVM_PROJECT_PATH / "libStandaloneFuzzTargetAngoraFast.a"
++    )
++
++    # These directories need to be restored to build multiple times, according
++    # to the script from AFL++
++    src = Path(build_env["SRC"])
++    work = Path(build_env["WORK"])
++    with utils.restore_directory(src), utils.restore_directory(work):
++        utils.build_benchmark(build_env)
++
++    out_path = Path(build_env["OUT"])
++    fuzz_target_name = build_env["FUZZ_TARGET"]
++    fuzz_target_path = out_path / fuzz_target_name
++    fuzz_target_path.rename(out_path / (fuzz_target_name + "_angora_fast"))
++
++
++def build_angora_track():
++    build_env = copy.deepcopy(os.environ)
++
++    build_env["CC"] = "angora-clang"
++    build_env["CXX"] = "angora-clang++"
++    build_env["USE_TRACK"] = "true"
++
++    full_abilist_path = Path("/tmp/angora_track_abilist.txt")
++    with open(full_abilist_path, "w") as full_abilist_file:
++        for abilist_path in BENCHMARK_TO_ABILISTS.get(os.environ["BENCHMARK"], []):
++            with open(abilist_path) as current_abilist_file:
++                full_abilist_file.write(f"# {abilist_path}")
++                full_abilist_file.write(current_abilist_file.read())
++                full_abilist_file.write("\n")
++    build_env["ANGORA_TAINT_RULE_LIST"] = str(full_abilist_path)
++
++    build_env["FUZZER_LIB"] = str(
++        LLVM_PROJECT_PATH / "libStandaloneFuzzTargetAngoraTrack.a"
++    )
++
++    # These directories need to be restored to build multiple times, according
++    # to the script from AFL++
++    src = Path(build_env["SRC"])
++    work = Path(build_env["WORK"])
++    with utils.restore_directory(src), utils.restore_directory(work):
++        utils.build_benchmark(build_env)
++
++    out_path = Path(build_env["OUT"])
++    fuzz_target_name = build_env["FUZZ_TARGET"]
++    fuzz_target_path = out_path / fuzz_target_name
++    fuzz_target_path.rename(out_path / (fuzz_target_name + "_angora_track"))
++
++
++def build_placeholder():
++    out_path = Path(os.environ["OUT"])
++    fuzz_target_name = os.environ["FUZZ_TARGET"]
++    fuzz_target_path = out_path / fuzz_target_name
++    with open(fuzz_target_path, "w") as placeholder_file:
++        placeholder_file.write("Just a placeholder to make FuzzBench happy\n")
++
++
++def remove_placeholder():
++    out_path = Path(os.environ["OUT"])
++    fuzz_target_name = os.environ["FUZZ_TARGET"]
++    fuzz_target_path = out_path / fuzz_target_name
++    fuzz_target_path.unlink()
++
++
++def build():
++    assert EXTRA_ABILISTS_PATH.is_dir()
++    assert LLVM_PROJECT_PATH.is_dir()
++
++    print("Building with Angora fast instrumentation")
++    build_angora_fast()
++    print("Building with Angora track instrumentation")
++    build_angora_track()
++    print("Building placeholder")
++    build_placeholder()
++
++
++def fuzz(input_corpus, output_corpus, target_binary):
++    binaries_path = Path(target_binary).parent
++    fuzz_target_name = os.environ["FUZZ_TARGET"]
++
++    angora_fast_path = binaries_path / (fuzz_target_name + "_angora_fast")
++    assert angora_fast_path.is_file()
++
++    angora_track_path = binaries_path / (fuzz_target_name + "_angora_track")
++    assert angora_track_path.is_file()
++
++    # Angora needs at least one seed file
++    input_corpus = Path(input_corpus)
++    if not any(input_corpus.iterdir()):
++        print(f"Using empty file as seed, no seeds provided in: {input_corpus}")
++        empty_path = input_corpus / "empty"
++        empty_path.touch()
++
++    # Angora requires the output folder not to exist
++    Path(output_corpus).rmdir()
++
++    out_path = Path(os.environ["OUT"])
++    os.environ["PATH"] += f":{out_path / 'fuzzer_prefix/bin' }"
++    os.environ["LD_LIBRARY_PATH"] = str(out_path / "fuzzer_prefix/lib")
++    os.environ["ANGORA_DISABLE_CPU_BINDING"] = "true"
++    os.environ["FUZZBENCH_SKIP_WRAPPER"] = "1"
++    os.environ["RUST_BACKTRACE"] = "1"
++    os.environ["RUST_LOG"] = "warn"
++
++    subprocess.run(
++        [
++            "fuzzer",
++            "--memory_limit=2048",
++            f"--input={input_corpus}",
++            f"--output={output_corpus}",
++            "--mode=llvm",
++            f"--track={angora_track_path}",
++            "--",
++            str(angora_fast_path),
++            "@@",
++        ],
++        check=True,
++    )
++
++
++def get_stats(output_corpus, fuzzer_log):  # pylint: disable=unused-argument
++    """Gets fuzzer stats for Angora."""
++
++    stats_path = Path(output_corpus) / "chart_stat.json"
++    with open(stats_path) as stats_file:
++        fuzzer_stats = json.load(stats_file)
++
++    fuzzbench_stats = {"execs_per_sec": float(fuzzer_stats["speed"][0])}
++    return json.dumps(fuzzbench_stats)
+diff --git a/fuzzers/angora/patch_angora_dockerfile.sh b/fuzzers/angora/patch_angora_dockerfile.sh
+new file mode 100755
+index 0000000..43fd868
+--- /dev/null
++++ b/fuzzers/angora/patch_angora_dockerfile.sh
+@@ -0,0 +1,50 @@
++#!/bin/bash
++# patch_angora_dockerfile.sh
++# Angora builder.Dockerfile을 StorFuzz-FuzzBench (Python 3.10, focal base-image) 호환으로 변환
++#
++# 사용법: 
++#   cp <fuzzbench-snappy>/fuzzers/angora/builder.Dockerfile <StorFuzz-FuzzBench>/fuzzers/angora/builder.Dockerfile
++#   cd <StorFuzz-FuzzBench>/fuzzers/angora/
++#   bash patch_angora_dockerfile.sh
++
++TARGET="builder.Dockerfile"
++
++if [ ! -f "$TARGET" ]; then
++    echo "ERROR: $TARGET not found in current directory"
++    exit 1
++fi
++
++echo "[1/4] Python 3.8 → 3.10 경로 변환 (llvm-builder-deps 스테이지)"
++
++# Python 라이브러리 경로
++sed -i 's|/usr/local/lib/python3.8|/usr/local/lib/python3.10|g' "$TARGET"
++
++# Python include 경로
++sed -i 's|/usr/local/include/python3.8|/usr/local/include/python3.10|g' "$TARGET"
++
++# Python site-packages 경로
++sed -i 's|/usr/local/lib/python3.8/site-packages|/usr/local/lib/python3.10/site-packages|g' "$TARGET"
++
++# venv 생성 명령
++sed -i 's|python3.8 -m venv|python3.10 -m venv|g' "$TARGET"
++
++echo "[2/4] (선택) 중간 빌드 스테이지를 focal로 업그레이드"
++echo "       → xenial 바이너리는 focal에서 동작하므로 기본적으로 스킵"
++echo "       → 문제 발생 시 아래 주석 해제:"
++echo "         # sed -i 's|FROM ubuntu:xenial AS libunwind-builder|FROM ubuntu:focal AS libunwind-builder|g' \$TARGET"
++echo "         # sed -i 's|FROM ubuntu:xenial AS llvm-builder-deps|FROM ubuntu:focal AS llvm-builder-deps|g' \$TARGET"
++
++echo "[3/4] LLVM 빌드 병렬 제한 확인 (OOM 방지)"
++if grep -q "\-j 4" "$TARGET"; then
++    echo "       LLVM 빌드: -j 4 (현재 설정 유지)"
++    echo "       메모리 부족 시 -j 2로 변경: sed -i 's/-j 4/-j 2/' $TARGET"
++fi
++
++echo "[4/4] 검증"
++echo "--- Python 경로 확인 ---"
++grep -n "python3\." "$TARGET" | grep -v "#"
++echo ""
++echo "--- base-image 참조 확인 ---"
++grep -n "base-image" "$TARGET"
++echo ""
++echo "패치 완료. 변경사항을 확인하세요."
+diff --git a/fuzzers/angora/prebuild.sh b/fuzzers/angora/prebuild.sh
+new file mode 100755
+index 0000000..4d7c4c0
+--- /dev/null
++++ b/fuzzers/angora/prebuild.sh
+@@ -0,0 +1,190 @@
++#!/bin/bash
++# fuzzers/angora/prebuild.sh
++# ─────────────────────────────────────────────────────────────
++# Angora의 무거운 빌드 스테이지(LLVM 11 소스빌드, Rust, libcxx)를
++# 1회만 실행하고 산출물을 cached/ 디렉토리에 추출합니다.
++#
++# 사용법:
++#   cd <StorFuzz-FuzzBench>/fuzzers/angora
++#   bash prebuild.sh
++#
++# 요구사항:
++#   - Docker (BuildKit 지원)
++#   - RAM 8GB+ (LLVM 빌드용, 부족하면 -j 4 → -j 2로 수정)
++#   - 디스크 20GB+ 여유
++#
++# 완료 후:
++#   cached/ 디렉토리에 모든 산출물이 저장됨
++#   builder.Dockerfile (경량 버전)이 이 산출물을 사용함
++# ─────────────────────────────────────────────────────────────
++
++set -euo pipefail
++
++SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
++CACHE_DIR="${SCRIPT_DIR}/cached"
++FULL_DOCKERFILE="${SCRIPT_DIR}/builder.Dockerfile.full"
++
++# 색상 출력
++RED='\033[0;31m'
++GREEN='\033[0;32m'
++YELLOW='\033[1;33m'
++NC='\033[0m'
++
++info()  { echo -e "${GREEN}[INFO]${NC} $*"; }
++warn()  { echo -e "${YELLOW}[WARN]${NC} $*"; }
++error() { echo -e "${RED}[ERROR]${NC} $*"; exit 1; }
++
++# ─── 사전 확인 ───
++if [ ! -f "$FULL_DOCKERFILE" ]; then
++    error "builder.Dockerfile.full not found at: $FULL_DOCKERFILE"
++fi
++
++if ! docker info > /dev/null 2>&1; then
++    error "Docker가 실행되지 않고 있습니다"
++fi
++
++# 메모리 확인 (Linux)
++if [ -f /proc/meminfo ]; then
++    MEM_KB=$(grep MemTotal /proc/meminfo | awk '{print $2}')
++    MEM_GB=$((MEM_KB / 1024 / 1024))
++    if [ "$MEM_GB" -lt 8 ]; then
++        warn "가용 메모리: ${MEM_GB}GB — LLVM 빌드에 8GB+ 권장"
++        warn "builder.Dockerfile.full에서 -j 4 → -j 2로 변경하세요"
++    else
++        info "가용 메모리: ${MEM_GB}GB — OK"
++    fi
++fi
++
++# ─── base-image 확인 ───
++info "base-image 확인..."
++if ! docker image inspect gcr.io/fuzzbench/base-image > /dev/null 2>&1; then
++    warn "gcr.io/fuzzbench/base-image가 없습니다"
++    warn "StorFuzz-FuzzBench 루트에서 먼저 빌드하세요:"
++    warn "  make -j base-image"
++    error "base-image가 필요합니다"
++fi
++
++# ─── Phase 1: fuzzer-builder 스테이지까지 빌드 ───
++info "=========================================="
++info "Phase 1: Angora 전체 빌드 (소요: 30분~2시간)"
++info "=========================================="
++
++docker build \
++    --target fuzzer-builder \
++    -t angora-prebuild:latest \
++    -f "$FULL_DOCKERFILE" \
++    "$SCRIPT_DIR"
++
++info "빌드 완료!"
++
++# ─── Phase 2: 산출물 추출 ───
++info "=========================================="
++info "Phase 2: 산출물 추출 → cached/"
++info "=========================================="
++
++rm -rf "$CACHE_DIR"
++mkdir -p "$CACHE_DIR"
++
++# 임시 컨테이너 생성
++docker create --name angora-extract angora-prebuild:latest /bin/true
++
++# 핵심 바이너리
++info "추출: LLVM-11.1.0-Linux.sh"
++docker cp angora-extract:/llvm-project/LLVM-11.1.0-Linux.sh "$CACHE_DIR/"
++
++info "추출: Angora-1.2.2-Linux.sh"
++docker cp angora-extract:/angora/Angora-1.2.2-Linux.sh "$CACHE_DIR/"
++
++# libunwind — fuzzer-builder에 이미 설치되어 있으므로 /usr/local/lib에서 추출
++info "추출: libunwind"
++mkdir -p "$CACHE_DIR/libunwind"
++docker cp angora-extract:/usr/local/lib/libunwind.so          "$CACHE_DIR/libunwind/" 2>/dev/null || true
++docker cp angora-extract:/usr/local/lib/libunwind.so.8        "$CACHE_DIR/libunwind/" 2>/dev/null || true
++docker cp angora-extract:/usr/local/lib/libunwind.so.8.0.1    "$CACHE_DIR/libunwind/" 2>/dev/null || true
++docker cp angora-extract:/usr/local/lib/libunwind.a            "$CACHE_DIR/libunwind/" 2>/dev/null || true
++docker cp angora-extract:/usr/local/lib/libunwind-x86_64.so   "$CACHE_DIR/libunwind/" 2>/dev/null || true
++docker cp angora-extract:/usr/local/lib/libunwind-x86_64.so.8 "$CACHE_DIR/libunwind/" 2>/dev/null || true
++docker cp angora-extract:/usr/local/lib/libunwind-x86_64.a    "$CACHE_DIR/libunwind/" 2>/dev/null || true
++
++# 또는 libunwind-builder에서 직접 tar 추출 (더 깔끔)
++info "추출: libunwind.tar.gz (libunwind-builder에서)"
++docker build \
++    --target libunwind-builder \
++    -t angora-libunwind:latest \
++    -f "$FULL_DOCKERFILE" \
++    "$SCRIPT_DIR" > /dev/null 2>&1
++docker create --name angora-libunwind-extract angora-libunwind:latest /bin/true
++docker cp angora-libunwind-extract:/libunwind_build/libunwind.tar.gz "$CACHE_DIR/"
++docker rm angora-libunwind-extract > /dev/null
++
++# ABI lists
++info "추출: extra_abilists/"
++docker cp angora-extract:/extra_abilists "$CACHE_DIR/"
++
++# Standalone fuzz target libraries
++info "추출: libStandaloneFuzzTarget*.a"
++docker cp angora-extract:/llvm-project/libStandaloneFuzzTargetAngoraFast.a  "$CACHE_DIR/"
++docker cp angora-extract:/llvm-project/libStandaloneFuzzTargetAngoraTrack.a "$CACHE_DIR/"
++
++# libcxx prefixes
++info "추출: plain-prefix/ (angora fast libcxx)"
++docker cp angora-extract:/llvm-project/plain-prefix "$CACHE_DIR/"
++
++info "추출: track-prefix/ (angora track libcxx)"
++docker cp angora-extract:/llvm-project/track-prefix "$CACHE_DIR/"
++
++# ─── 정리 ───
++docker rm angora-extract > /dev/null
++info "임시 컨테이너 제거 완료"
++
++# ─── 검증 ───
++info "=========================================="
++info "검증"
++info "=========================================="
++
++REQUIRED_FILES=(
++    "LLVM-11.1.0-Linux.sh"
++    "Angora-1.2.2-Linux.sh"
++    "libunwind.tar.gz"
++    "libStandaloneFuzzTargetAngoraFast.a"
++    "libStandaloneFuzzTargetAngoraTrack.a"
++)
++
++FAIL=0
++for f in "${REQUIRED_FILES[@]}"; do
++    if [ -f "$CACHE_DIR/$f" ]; then
++        SIZE=$(du -h "$CACHE_DIR/$f" | cut -f1)
++        info "  ✓ $f ($SIZE)"
++    else
++        error "  ✗ $f — 누락!"
++        FAIL=1
++    fi
++done
++
++for d in "extra_abilists" "plain-prefix" "track-prefix"; do
++    if [ -d "$CACHE_DIR/$d" ]; then
++        COUNT=$(find "$CACHE_DIR/$d" -type f | wc -l)
++        info "  ✓ $d/ (${COUNT} files)"
++    else
++        error "  ✗ $d/ — 누락!"
++        FAIL=1
++    fi
++done
++
++if [ "$FAIL" -eq 0 ]; then
++    TOTAL_SIZE=$(du -sh "$CACHE_DIR" | cut -f1)
++    info ""
++    info "=========================================="
++    info "사전빌드 완료! (총 크기: $TOTAL_SIZE)"
++    info "=========================================="
++    info ""
++    info "이제 FuzzBench 실험을 실행하세요:"
++    info "  python3.10 experiment/run_experiment.py \\"
++    info "      -c config.yaml -e test -cb 1 \\"
++    info "      -f storfuzz angora -b zlib_zlib_uncompress_fuzzer"
++    info ""
++    info "builder.Dockerfile이 cached/ 산출물을 사용합니다."
++    info "LLVM 소스빌드 없이 수 분 안에 벤치마크 빌드가 완료됩니다."
++else
++    error "일부 산출물이 누락되었습니다. 로그를 확인하세요."
++fi
+\ No newline at end of file
+diff --git a/fuzzers/angora/runner.Dockerfile b/fuzzers/angora/runner.Dockerfile
+new file mode 100644
+index 0000000..0d6cf00
+--- /dev/null
++++ b/fuzzers/angora/runner.Dockerfile
+@@ -0,0 +1,15 @@
++# Copyright 2020 Google LLC
++#
++# Licensed under the Apache License, Version 2.0 (the "License");
++# you may not use this file except in compliance with the License.
++# You may obtain a copy of the License at
++#
++# http://www.apache.org/licenses/LICENSE-2.0
++#
++# Unless required by applicable law or agreed to in writing, software
++# distributed under the License is distributed on an "AS IS" BASIS,
++# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++# See the License for the specific language governing permissions and
++# limitations under the License.
++
++FROM gcr.io/fuzzbench/base-image
+diff --git a/requirements.txt b/requirements.txt
+index ca7b933..996fa82 100644
+--- a/requirements.txt
++++ b/requirements.txt
+@@ -1,3 +1,4 @@
++setuptools>=65.0,<70.0
+ alembic==1.8.1
+ google-api-python-client==2.64.0
+ google-auth==2.12.0
