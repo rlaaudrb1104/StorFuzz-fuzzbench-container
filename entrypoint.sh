@@ -21,8 +21,8 @@ else
 fi
 
 # Set up virtual environment for /root/StorFuzz-fuzzbench
-grep -qF "source /root/StorFuzz-fuzzbench/.venv/bin/activate" ~/.bashrc || echo "source /root/StorFuzz-fuzzbench/.venv/bin/activate" >> ~/.bashrc
-echo "cd /root/StorFuzz-fuzzbench" >> ~/.bashrc
+# grep -qF "source /root/StorFuzz-fuzzbench/.venv/bin/activate" ~/.bashrc || echo "source /root/StorFuzz-fuzzbench/.venv/bin/activate" >> ~/.bashrc
+# echo "cd /root/StorFuzz-fuzzbench" >> ~/.bashrc
 
 echo "[+] Done! Images built successfully."
 echo "[+] To run experiment (example command)"

@@ -1,0 +1,3 @@
+[submodule "StorFuzz-fuzzbench"]
+	path = StorFuzz-fuzzbench
+	url = https://github.com/rlaaudrb1104/StorFuzz-fuzzbench

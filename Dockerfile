@@ -1,4 +1,4 @@
-# usage DooD : docker run -v /var/run/docker.sock:/var/run/docker.sock -v /tmp/StorFuzz/experiment-data:/tmp/StorFuzz/experiment-data -v /tmp/StorFuzz/report-data:/tmp/StorFuzz/report-data -it StorFuzz
+# usage DooD : docker run -v /var/run/docker.sock:/var/run/docker.sock -v /tmp/storfuzz-fuzzbench2/experiment-data:/tmp/storfuzz-fuzzbench2/experiment-data -v /tmp/storfuzz-fuzzbench2/report-data:/tmp/storfuzz-fuzzbench2/report-data -it StorFuzz
 FROM ubuntu:22.04
 
 ARG DEBIAN_FRONTEND=noninteractive
@@ -23,9 +23,11 @@ COPY entrypoint.sh /root/entrypoint.sh
 COPY storfuzz-patch.patch /root/storfuzz-patch.patch
 
 # StorFuzz setup (StorFuzz Fix version)
-RUN git clone https://github.com/rub-softsec/StorFuzz-fuzzbench.git && \
-    cd StorFuzz-fuzzbench && \
-    git apply /root/storfuzz-patch.patch
+# RUN git clone https://github.com/rub-softsec/StorFuzz-fuzzbench.git && \
+#     cd StorFuzz-fuzzbench && \
+#     git apply /root/storfuzz-patch.patch
+
+COPY StorFuzz-fuzzbench /root/StorFuzz-fuzzbench
 
 WORKDIR /root/StorFuzz-fuzzbench
 
@@ -33,9 +35,11 @@ WORKDIR /root/StorFuzz-fuzzbench
 COPY config.yaml .
 COPY cached.zip /root/StorFuzz-fuzzbench/fuzzers/angora/cached.zip
 
-RUN unzip /root/StorFuzz-fuzzbench/fuzzers/angora/cached.zip -d /root/StorFuzz-fuzzbench/fuzzers/angora/cached && \
+WORKDIR /root/StorFuzz-fuzzbench/fuzzers/angora
+RUN unzip /root/StorFuzz-fuzzbench/fuzzers/angora/cached.zip && \
     rm /root/StorFuzz-fuzzbench/fuzzers/angora/cached.zip
 
+WORKDIR /root/StorFuzz-fuzzbench
 # virtual environment setup
 ENV PATH="/root/StorFuzz-fuzzbench/.venv/bin:$PATH"
 
