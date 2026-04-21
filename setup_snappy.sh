@@ -95,24 +95,3 @@ mkdir -p "${EXPERIMENT_DATA}"
 mkdir -p "${REPORT_DATA}"
 info "experiment-data: ${EXPERIMENT_DATA}"
 info "report-data:     ${REPORT_DATA}"
-
-# ─── Phase 5: 컨테이너 실행 ───
-info "=========================================="
-info "Phase 6: 컨테이너 실행"
-info "=========================================="
-
-SEED_MOUNT=""
-if [ -n "${SEED_CORPUS}" ]; then
-    [ -d "${SEED_CORPUS}" ] || error "seed corpus 디렉토리가 없습니다: ${SEED_CORPUS}"
-    SEED_MOUNT="-v ${SEED_CORPUS}:/seed_corpus"
-    info "seed_corpus 마운트: ${SEED_CORPUS} → /seed_corpus"
-else
-    info "seed corpus 미지정 — 마운트 생략"
-fi
-
-docker run \
-    -v /var/run/docker.sock:/var/run/docker.sock \
-    -v "${EXPERIMENT_DATA}:${EXPERIMENT_DATA}" \
-    -v "${REPORT_DATA}:${REPORT_DATA}" \
-    ${SEED_MOUNT} \
-    -it "${IMAGE_NAME}"
