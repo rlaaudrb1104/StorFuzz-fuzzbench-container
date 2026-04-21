@@ -56,6 +56,7 @@ docker rm "$TEMP_CONTAINER" > /dev/null
 # ── 컨테이너 실행 ──
 echo "[INFO] Starting container..."
 exec docker run \
+    -v /usr/libexec/docker/cli-plugins/docker-buildx:/usr/libexec/docker/cli-plugins/docker-buildx \
     -v /var/run/docker.sock:/var/run/docker.sock \
     -v "${EXPERIMENT_FILESTORE}:${EXPERIMENT_FILESTORE}" \
     -v "${REPORT_FILESTORE}:${REPORT_FILESTORE}" \

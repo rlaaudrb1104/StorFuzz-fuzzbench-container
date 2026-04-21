@@ -3,7 +3,8 @@ trials: 1
 
 # The amount of time in seconds that each trial is run for.
 # 24 hours = 24 * 60 * 60 = 86400
-max_total_time: 1200
+# 12 hours = 12 * 60 * 60 = 43200
+max_total_time: 43200
 
 # The location of the docker registry.
 # FIXME: Support custom docker registry.
@@ -12,13 +13,19 @@ docker_registry: gcr.io/fuzzbench
 
 # The local experiment folder that will store most of the experiment data.
 # Please use an absolute path.
-experiment_filestore: /tmp/yunseo/storfuzz-fuzzbench/experiment-data
+experiment_filestore: /tmp/myeonggyu/storfuzz-fuzzbench2/experiment-data
 # The local report folder where HTML reports and summary data will be stored.
 # Please use an absolute path.
-report_filestore: /tmp/yunseo/storfuzz-fuzzbench/report-data
+report_filestore: /tmp/myeonggyu/storfuzz-fuzzbench2/report-data
 
 # Flag that indicates this is a local experiment.
 local_experiment: true
 
 # exposed_devices:
 #  - /dev/afl_snapshot
+
+# fuzzers : forkserver_libafl_stats forkserver_storfuzz snappy_angora snappy_angora_reusing
+# targets : harfbuzz_hb-shape-fuzzer zlib_zlib_uncompress_fuzzer re2_fuzzer
+# runners-cpus : 20
+# measurers-cpus : 20
+# custom_corpus : /tmp/myeonggyu/storfuzz-fuzzbench2/experiment-data/corpora

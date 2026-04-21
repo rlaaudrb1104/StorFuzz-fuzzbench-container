@@ -33,16 +33,16 @@ WORKDIR /root/StorFuzz-fuzzbench
 
 # copy config file
 COPY config.yaml .
-COPY StorFuzz-fuzzbench/fuzzers/angora/cached.zip /root/StorFuzz-fuzzbench/fuzzers/angora/cached.zip
-COPY StorFuzz-fuzzbench/fuzzers/angora_reusing/cached.zip /root/StorFuzz-fuzzbench/fuzzers/angora_reusing/cached.zip
+# COPY StorFuzz-fuzzbench/fuzzers/angora/cached.zip /root/StorFuzz-fuzzbench/fuzzers/angora/cached.zip
+# COPY StorFuzz-fuzzbench/fuzzers/angora_reusing/cached.zip /root/StorFuzz-fuzzbench/fuzzers/angora_reusing/cached.zip
 
-WORKDIR /root/StorFuzz-fuzzbench/fuzzers/angora
-RUN unzip -o /root/StorFuzz-fuzzbench/fuzzers/angora/cached.zip && \
-    rm /root/StorFuzz-fuzzbench/fuzzers/angora/cached.zip
+# WORKDIR /root/StorFuzz-fuzzbench/fuzzers/angora
+# RUN unzip -o /root/StorFuzz-fuzzbench/fuzzers/angora/cached.zip && \
+#     rm /root/StorFuzz-fuzzbench/fuzzers/angora/cached.zip
 
-WORKDIR /root/StorFuzz-fuzzbench/fuzzers/angora_reusing
-RUN unzip -o /root/StorFuzz-fuzzbench/fuzzers/angora_reusing/cached.zip && \
-    rm /root/StorFuzz-fuzzbench/fuzzers/angora_reusing/cached.zip
+# WORKDIR /root/StorFuzz-fuzzbench/fuzzers/angora_reusing
+# RUN unzip -o /root/StorFuzz-fuzzbench/fuzzers/angora_reusing/cached.zip && \
+#     rm /root/StorFuzz-fuzzbench/fuzzers/angora_reusing/cached.zip
 
 WORKDIR /root/StorFuzz-fuzzbench
 # virtual environment setup
