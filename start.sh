@@ -56,9 +56,12 @@ docker rm "$TEMP_CONTAINER" > /dev/null
 # ── 컨테이너 실행 ──
 echo "[INFO] Starting container..."
 exec docker run \
-    -v /usr/libexec/docker/cli-plugins/docker-buildx:/usr/libexec/docker/cli-plugins/docker-buildx \
+    -v /docker/host/cli-plugins/docker-buildx.exe:/usr/libexec/docker/cli-plugins/docker-buildx \
     -v /var/run/docker.sock:/var/run/docker.sock \
     -v "${EXPERIMENT_FILESTORE}:${EXPERIMENT_FILESTORE}" \
     -v "${REPORT_FILESTORE}:${REPORT_FILESTORE}" \
     -w "${CONTAINER_WORKDIR}" \
     -it "${IMAGE}:configured"
+    # -v /usr/libexec/docker/cli-plugins/docker-buildx:/usr/libexec/docker/cli-plugins/docker-buildx \
+    # windows version
+    # -v /Docker/host/cli-plugins/docker-buildx.exe:/Docker/host/cli-plugins/docker-buildx.exe \
